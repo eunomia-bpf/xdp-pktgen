@@ -1,21 +1,6 @@
-# **libbpf-starter-template**
+# xdp-pktgen: xdp based packet generator
 
-![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
-[![Build and publish](https://github.com/eunomia-bpf/libbpf-starter-template/actions/workflows/publish.yml/badge.svg)](https://github.com/eunomia-bpf/libbpf-starter-template/actions/workflows/publish.yml)
-![GitHub stars](https://img.shields.io/github/stars/eunomia-bpf/libbpf-starter-template?style=social)
-
-Welcome to the **`libbpf-starter-template`**! This project template is designed to help you quickly start
-developing eBPF projects using libbpf in C. The template provides a solid starting point with a Makefile, 
-Dockerfile, and GitHub action, along with all necessary dependencies to simplify your development process.
-
-借助于 GitHub 模板和 Github Codespace，可以轻松构建 eBPF 项目和开发环境，一键在线编译运行 eBPF 程序。关于中文的文档和详细的 eBPF 开发教程，可以参考：https://github.com/eunomia-bpf/bpf-developer-tutorial
-
-There are other templates for other languages:
-
-- <https://github.com/eunomia-bpf/libbpf-starter-template>: eBPF project template based on the C language and the libbpf framework.
-- <https://github.com/eunomia-bpf/cilium-ebpf-starter-template>: eBPF project template based on the Go language and the cilium/ebpf framework.
-- <https://github.com/eunomia-bpf/libbpf-rs-starter-template>: eBPF project template based on the Rust language and the libbpf-rs framework.
-- <https://github.com/eunomia-bpf/eunomia-template>: eBPF project template based on the C language and the eunomia-bpf framework.
+This is a simple xdp based packet generator.
 
 ## **Getting Started**
 
@@ -123,7 +108,7 @@ This will compile your code and create the necessary binaries. You can you the `
 You can run the binary with:
 
 ```console
-sudo src/bootstrap
+sudo src/xdp-pktgen
 ```
 
 Or with Github Packages locally:
