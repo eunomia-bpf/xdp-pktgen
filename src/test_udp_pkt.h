@@ -40,7 +40,7 @@ static __be16 __calc_udp_cksum(const struct test_udp_packet *pkt)
 	return bpf_htons(~chksum);
 }
 
-static struct test_udp_packet create_test_udp_packet(void)
+static struct test_udp_packet create_test_udp_packet_v6(void)
 {
     struct test_udp_packet pkt = {0};
 
@@ -49,7 +49,7 @@ static struct test_udp_packet create_test_udp_packet(void)
     // b8:3f:d2:2a:e5:11
     memcpy(pkt.eth.h_dest, (const unsigned char[]){0xb8, 0x3f, 0xd2, 0x2a, 0xe5, 0x11}, sizeof(pkt.eth.h_dest));
     // b8:3f:d2:2a:e7:69
-    // memcpy(pkt.eth.h_source, (const unsigned char[]){0xb8, 0x3f, 0xd2, 0x2a, 0xe7, 0x69}, sizeof(pkt.eth.h_source));
+    memcpy(pkt.eth.h_source, (const unsigned char[]){0xb8, 0x3f, 0xd2, 0x2a, 0xe7, 0x69}, sizeof(pkt.eth.h_source));
     
     // IPv6 header
     pkt.iph.version = 6;
@@ -71,6 +71,77 @@ static struct test_udp_packet create_test_udp_packet(void)
 
     // Payload
     memset(pkt.payload, 0x42, sizeof(pkt.payload)); // Assuming you want the payload initialized to 0x42.
+    return pkt;
+}
+
+
+// Packed attribute to prevent padding
+struct __attribute__((__packed__)) test_udp_packet_v4
+{
+    struct ethhdr eth;
+    struct iphdr iph;
+    struct udphdr udp;
+    uint8_t payload[64 - sizeof(struct udphdr) - sizeof(struct ethhdr) - sizeof(struct iphdr)];
+};
+
+// Helper function to calculate IP checksum
+static uint16_t ip_checksum(void *vdata, size_t length) {
+    char *data = vdata;
+    uint64_t acc = 0xffff;
+    
+    for (size_t i = 0; i + 1 < length; i += 2) {
+        uint16_t word;
+        memcpy(&word, data + i, 2);
+        acc += ntohs(word);
+        if (acc > 0xffff) {
+            acc -= 0xffff;
+        }
+    }
+    
+    if (length & 1) {
+        uint16_t word = 0;
+        memcpy(&word, data + length - 1, 1);
+        acc += ntohs(word);
+        if (acc > 0xffff) {
+            acc -= 0xffff;
+        }
+    }
+    
+    return htons(~acc);
+}
+
+#define PORT 9876
+#define SERVER_IP "127.0.0.1"
+
+static struct test_udp_packet_v4 create_test_udp_packet_v4(void) {
+    struct test_udp_packet_v4 pkt = {0};
+
+    // Ethernet header
+    pkt.eth.h_proto = htons(ETH_P_IP);
+    memcpy(pkt.eth.h_dest, (const unsigned char[]){0xb8, 0x3f, 0xd2, 0x2a, 0xe5, 0x11}, sizeof(pkt.eth.h_dest));
+    memcpy(pkt.eth.h_source, (const unsigned char[]){0xb8, 0x3f, 0xd2, 0x2a, 0xe7, 0x69}, sizeof(pkt.eth.h_source));
+    
+    // IPv4 header
+    pkt.iph.version = 4;
+    pkt.iph.ihl = 5;
+    pkt.iph.tot_len = htons(sizeof(struct test_udp_packet_v4));
+    pkt.iph.ttl = 64;  // default TTL
+    pkt.iph.protocol = IPPROTO_UDP;
+    pkt.iph.saddr = inet_addr(SERVER_IP);
+    pkt.iph.daddr = inet_addr(SERVER_IP);
+    pkt.iph.check = ip_checksum(&pkt.iph, sizeof(struct iphdr));  // Calculate IPv4 header checksum
+
+    // UDP header
+    pkt.udp.source = htons(12345);
+    pkt.udp.dest = htons(PORT);  // Use the PORT macro if you want to match the listening server
+    pkt.udp.len = htons(sizeof(struct udphdr) + sizeof(pkt.payload));  // UDP length field
+
+    // No need for UDP checksum for IPv4 in this controlled test environment unless required
+    pkt.udp.check = 0;
+
+    // Payload
+    memset(pkt.payload, 0x42, sizeof(pkt.payload));  // Fill payload with character 'B' (0x42)
+
     return pkt;
 }
 

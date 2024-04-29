@@ -61,11 +61,17 @@ static int libbpf_print_fn(enum libbpf_print_level level, const char *format, va
 
 static int run_prog(int run_prog_fd, int count)
 {
-	struct test_udp_packet pkt_udp = create_test_udp_packet();
+	// struct test_udp_packet pkt_udp = create_test_udp_packet_v6();
+	struct test_udp_packet_v4 pkt_udp = create_test_udp_packet_v4();
 	struct xdp_md ctx_in = {
 		.data_end = sizeof(pkt_udp),
 		.ingress_ifindex = cfg.ifindex
 	};
+	// struct xdp_md ctx_in_array[64];
+	// for (int i = 0; i < 64; i++) {
+	// 	ctx_in_array[i].data_end = sizeof(pkt_udp);
+	// 	ctx_in_array[i].ingress_ifindex = cfg.ifindex;
+	// }
 
 	printf("pkt size: %ld\n", sizeof(pkt_udp));
 	DECLARE_LIBBPF_OPTS(bpf_test_run_opts, opts,
