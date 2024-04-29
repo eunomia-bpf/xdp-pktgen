@@ -34,13 +34,34 @@
 #define BPF_F_TEST_XDP_LIVE_FRAMES	(1U << 1)
 #endif
 
+static volatile bool exiting = false;
 
-static bool status_exited = false;
-static bool runners_exited = false;
+static void sig_handler(int sig)
+{
+	exiting = true;
+}
 
-int run_prog_fd = 0;
 
-static int run_prog()
+struct config {
+	int ifindex;
+	int xdp_flags;
+	int repeat;
+	int batch_size;
+};
+
+struct config cfg = {
+	.ifindex = 6,
+	.xdp_flags = XDP_FLAGS_UPDATE_IF_NOEXIST,
+	.repeat = 1 << 20,
+	.batch_size = 0,
+};
+
+static int libbpf_print_fn(enum libbpf_print_level level, const char *format, va_list args)
+{
+	return vfprintf(stderr, format, args);
+}
+
+static int run_prog(int run_prog_fd, int count)
 {
 	struct test_udp_packet pkt_udp = create_test_udp_packet();
 	struct xdp_md ctx_in = {
@@ -53,9 +74,9 @@ static int run_prog()
 			    .data_size_in = sizeof(pkt_udp),
 			    .ctx_in = &ctx_in,
 			    .ctx_size_in = sizeof(ctx_in),
-			    .repeat = 1 << 20,
+			    .repeat = cfg.repeat,
 			    .flags = BPF_F_TEST_XDP_LIVE_FRAMES,
-			    .batch_size = 0,
+			    .batch_size = cfg.batch_size,
 				.cpu = 0,
 		);
 	__u64 iterations = 0;
@@ -70,76 +91,37 @@ static int run_prog()
 		if (err)
 			return -errno;
 		iterations += opts.repeat;
-	} while (1);
+	} while ((count == 0 || iterations < count) && !exiting);
 	return 0;
 }
 
-
-// static int probe_kernel_support(void)
-// {
-// 	DECLARE_LIBXDP_OPTS(xdp_program_opts, opts);
-// 	struct xdp_trafficgen *skel;
-// 	struct xdp_program *prog;
-// 	int data = 0, err;
-// 	bool status = 0;
-
-// 	skel = xdp_trafficgen__open();
-// 	if (!skel) {
-// 		err = -errno;
-// 		pr_warn("Couldn't open XDP program: %s\n", strerror(-err));
-// 		return err;
-// 	}
-
-// 	err = sample_init_pre_load(skel, "lo");
-// 	if (err < 0) {
-// 		pr_warn("Failed to sample_init_pre_load: %s\n", strerror(-err));
-// 		goto out;
-// 	}
-
-// 	opts.obj = skel->obj;
-// 	opts.prog_name = "xdp_drop";
-
-// 	prog = xdp_program__create(&opts);
-// 	if (!prog) {
-// 		err = -errno;
-// 		pr_warn("Couldn't load XDP program: %s\n", strerror(-err));
-// 		goto out;
-// 	}
-
-// 	const struct thread_config cfg = {
-// 		.pkt = &data,
-// 		.pkt_size = sizeof(data),
-// 		.num_pkts = 1,
-// 		.batch_size = 1,
-// 		.prog = prog
-// 	};
-// 	err = run_prog(&cfg, &status);
-// 	if (err == -EOPNOTSUPP) {
-// 		pr_warn("BPF_PROG_RUN with batch size support is missing from libbpf.\n");
-// 	}  else if (err == -EINVAL) {
-// 		err = -EOPNOTSUPP;
-// 		pr_warn("Kernel doesn't support live packet mode for XDP BPF_PROG_RUN.\n");
-// 	} else if (err) {
-// 		pr_warn("Error probing kernel support: %s\n", strerror(-err));
-// 	}
-
-// 	xdp_program__close(prog);
-// out:
-// 	xdp_trafficgen__destroy(skel);
-// 	return err;
-// }
+static int probe_kernel_support(int run_prog_fd)
+{
+	int err = run_prog(run_prog_fd, 1);
+	if (err == -EOPNOTSUPP) {
+		printf("BPF_PROG_RUN with batch size support is missing from libbpf.\n");
+	}  else if (err == -EINVAL) {
+		err = -EOPNOTSUPP;
+		printf("Kernel doesn't support live packet mode for XDP BPF_PROG_RUN.\n");
+	} else if (err) {
+		printf("Error probing kernel support: %s\n", strerror(-err));
+	} else {
+		printf("Kernel supports live packet mode for XDP BPF_PROG_RUN.\n");
+	}
+	return err;
+}
 
 int main()
 {
 	struct xdp_pktgen_bpf *skel = NULL;
-	pthread_t *runner_threads = NULL;
 	int err = 0, i;
-	char buf[100];
 	__u32 key = 0;
 
-	// err = probe_kernel_support();
-	// if (err)
-	// 	return err;
+	/* Set up libbpf errors and debug info callback */
+	libbpf_set_print(libbpf_print_fn);
+	/* Cleaner handling of Ctrl-C */
+	signal(SIGINT, sig_handler);
+	signal(SIGTERM, sig_handler);
 
 	skel = xdp_pktgen_bpf__open();
 	if (!skel) {
@@ -147,16 +129,29 @@ int main()
 		printf("Couldn't open XDP program: %s\n", strerror(-err));
 		goto out;
 	}
+	skel->bss->target_ifindex = cfg.ifindex;
 
 	err = xdp_pktgen_bpf__load(skel);
 	if (err)
 		goto out;
-	run_prog_fd = bpf_program__fd(skel->progs.xdp_redirect_notouch);
 
-	status_exited = true;
-	run_prog();
+	int run_prog_fd = bpf_program__fd(skel->progs.xdp_redirect_notouch);
+	// probe kernel support for BPF_PROG_RUN
+	err = probe_kernel_support(run_prog_fd);
+	if (err)
+		return err;
+	
+	// err = bpf_xdp_attach(cfg.ifindex, run_prog_fd,
+	// 						 cfg.xdp_flags,
+	// 						 NULL);
+	// if (err) {
+	// 	printf("attach xdp programs error\n");
+	// }
+	// printf("xdp program attached to %d\n", cfg.ifindex);
+	run_prog(run_prog_fd, 0);
 
 out:
 	xdp_pktgen_bpf__destroy(skel);
+	// bpf_xdp_detach(cfg.ifindex, cfg.xdp_flags, NULL);
     return err;
 }
