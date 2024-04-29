@@ -41,7 +41,6 @@ static void sig_handler(int sig)
 	exiting = true;
 }
 
-
 struct config {
 	int ifindex;
 	int xdp_flags;
@@ -51,7 +50,6 @@ struct config {
 
 struct config cfg = {
 	.ifindex = 6,
-	.xdp_flags = XDP_FLAGS_UPDATE_IF_NOEXIST,
 	.repeat = 1 << 20,
 	.batch_size = 0,
 };
@@ -66,6 +64,7 @@ static int run_prog(int run_prog_fd, int count)
 	struct test_udp_packet pkt_udp = create_test_udp_packet();
 	struct xdp_md ctx_in = {
 		.data_end = sizeof(pkt_udp),
+		.ingress_ifindex = cfg.ifindex
 	};
 
 	printf("pkt size: %ld\n", sizeof(pkt_udp));
@@ -114,7 +113,7 @@ static int probe_kernel_support(int run_prog_fd)
 int main()
 {
 	struct xdp_pktgen_bpf *skel = NULL;
-	int err = 0, i;
+	int err = 0;
 	__u32 key = 0;
 
 	/* Set up libbpf errors and debug info callback */
@@ -129,7 +128,6 @@ int main()
 		printf("Couldn't open XDP program: %s\n", strerror(-err));
 		goto out;
 	}
-	skel->bss->target_ifindex = cfg.ifindex;
 
 	err = xdp_pktgen_bpf__load(skel);
 	if (err)
@@ -141,17 +139,12 @@ int main()
 	if (err)
 		return err;
 	
-	// err = bpf_xdp_attach(cfg.ifindex, run_prog_fd,
-	// 						 cfg.xdp_flags,
-	// 						 NULL);
-	// if (err) {
-	// 	printf("attach xdp programs error\n");
-	// }
-	// printf("xdp program attached to %d\n", cfg.ifindex);
-	run_prog(run_prog_fd, 0);
+	err = run_prog(run_prog_fd, 0);
+	if (err) {
+		printf("run xdp program error: %d\n", err);
+	}
 
 out:
 	xdp_pktgen_bpf__destroy(skel);
-	// bpf_xdp_detach(cfg.ifindex, cfg.xdp_flags, NULL);
     return err;
 }

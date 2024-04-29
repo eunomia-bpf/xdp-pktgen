@@ -10,10 +10,8 @@
 
 char _license[] SEC("license") = "GPL";
 
-int target_ifindex;
-
 SEC("xdp")
 int xdp_redirect_notouch(struct xdp_md *ctx)
 {
-	return bpf_redirect(target_ifindex, 0);
+	return XDP_TX;
 }
