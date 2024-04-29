@@ -62,9 +62,25 @@ static int libbpf_print_fn(enum libbpf_print_level level, const char *format, va
 static int run_prog(int run_prog_fd, int count)
 {
 	// struct test_udp_packet pkt_udp = create_test_udp_packet_v6();
-	struct test_udp_packet_v4 pkt_udp = create_test_udp_packet_v4();
+	char* pkt_file = NULL;
+	unsigned char pkt_file_buffer[1024];
+	int size = 0;
+	if ((pkt_file = getenv("PKTGEN_FILE")) != NULL) {
+		FILE* file = fopen(pkt_file, "r");
+		if (file == NULL) {
+			printf("Error opening file\n");
+			return -1;
+		}
+		// read the the file length of data into the buffer
+		size = fread(pkt_file_buffer, 1, 1024, file);
+		fclose(file);
+	} else {
+		struct test_udp_packet_v4 pkt_udp = create_test_udp_packet_v4();
+		size = sizeof(pkt_udp);
+		memcpy(pkt_file_buffer, &pkt_udp, size);
+	}
 	struct xdp_md ctx_in = {
-		.data_end = sizeof(pkt_udp),
+		.data_end = size,
 		.ingress_ifindex = cfg.ifindex
 	};
 	// struct xdp_md ctx_in_array[64];
@@ -73,10 +89,10 @@ static int run_prog(int run_prog_fd, int count)
 	// 	ctx_in_array[i].ingress_ifindex = cfg.ifindex;
 	// }
 
-	printf("pkt size: %ld\n", sizeof(pkt_udp));
+	printf("pkt size: %ld\n", size);
 	DECLARE_LIBBPF_OPTS(bpf_test_run_opts, opts,
-			    .data_in = &pkt_udp,
-			    .data_size_in = sizeof(pkt_udp),
+			    .data_in = pkt_file_buffer,
+			    .data_size_in = size,
 			    .ctx_in = &ctx_in,
 			    .ctx_size_in = sizeof(ctx_in),
 			    .repeat = cfg.repeat,
